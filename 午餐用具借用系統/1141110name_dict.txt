@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 SweetAlert2 -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <!-- 引入 FontAwesome 圖示 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+      body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background-color: #f3f4f6;
+      }
+      .item-btn.selected {
+        background-color: #dbeafe; /* 淺藍底 */
+        border-color: #3b82f6; /* 藍框 */
+        border-width: 6px; /* 加粗邊框 */
+        transform: scale(1.05);
+      }
+      .spinner {
+        border: 4px solid rgba(0, 0, 0, 0.1);
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        border-left-color: #09f;
+        animation: spin 1s ease infinite;
+      }
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+    </style>
+  </head>
+  <body class="p-4 md:p-8">
+
+    <div class="max-w-xl mx-auto bg-white rounded-3xl shadow-xl overflow-hidden">
+      
+      <!-- 標題區 -->
+      <div class="bg-blue-500 p-5 text-white text-center">
+        <h1 class="text-3xl font-bold mb-1"><i class="fa-solid fa-utensils mr-2"></i>餐具借用站</h1>
+        <p class="text-base opacity-90">請選擇班級座號並點選餐具</p>
+      </div>
+
+      <div class="p-6 space-y-8">
+        
+        <!-- 載入中遮罩 -->
+        <div id="loading" class="flex flex-col items-center justify-center py-10">
+          <div class="spinner mb-4"></div>
+          <p class="text-gray-500">正在讀取資料...</p>
+        </div>
+
+        <!-- 主要表單 -->
+        <div id="mainForm" class="hidden space-y-6">
+          
+          <!-- 1. 學生身分選擇區 -->
+          <div class="bg-gray-50 p-5 rounded-2xl border border-gray-200">
+            <h2 class="text-xl font-bold text-gray-700 mb-4 border-l-8 border-blue-500 pl-3">我是誰？</h2>
+            
+            <div class="grid grid-cols-2 gap-5">
+              <div>
+                <label class="block text-base font-medium text-gray-700 mb-2">班級</label>
+                <select id="classSelect" onchange="updateStudentList()" class="w-full text-xl p-4 border border-gray-300 rounded-xl focus:ring-4 focus:ring-blue-200 focus:border-blue-500 outline-none bg-white shadow-sm">
+                  <option value="">請選擇</option>
+                  <!-- JS 動態填入 -->
+                </select>
+              </div>
+              
+              <div>
+                <label class="block text-base font-medium text-gray-700 mb-2">座號</label>
+                <select id="seatSelect" onchange="identifyStudent()" disabled class="w-full text-xl p-4 border border-gray-300 rounded-xl focus:ring-4 focus:ring-blue-200 focus:border-blue-500 outline-none bg-white shadow-sm disabled:bg-gray-100 disabled:text-gray-400">
+                  <option value="">請選擇</option>
+                  <!-- JS 動態填入 -->
+                </select>
+              </div>
+            </div>
+
+            <!-- 自動顯示資訊區 -->
+            <div id="infoArea" class="mt-4 hidden transition-all animate-fade-in">
+              <div class="flex items-center justify-between bg-blue-50 p-4 rounded-xl text-blue-900 border border-blue-100">
+                <div>
+                  <span class="text-sm text-blue-600 font-bold">學生姓名</span>
+                  <div class="font-bold text-2xl mt-1" id="displayStudentName">--</div>
+                </div>
+                <div class="text-right">
+                  <span class="text-sm text-blue-600 font-bold">導師</span>
+                  <div class="font-bold text-xl mt-1" id="displayTeacherName">--</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. 餐具選擇區 (特大號按鈕) -->
+          <div>
+            <h2 class="text-xl font-bold text-gray-700 mb-4 border-l-8 border-orange-500 pl-3">我要借什麼？</h2>
+            <div class="grid grid-cols-3 gap-4">
+              <!-- 碗 -->
+              <div onclick="toggleItem(this, '碗')" class="item-btn cursor-pointer bg-white border-2 border-gray-200 rounded-2xl p-2 flex flex-col items-center justify-center transition-all h-48 hover:bg-gray-50 hover:shadow-md">
+                <i class="fa-solid fa-bowl-rice text-7xl text-orange-500 mb-3"></i>
+                <span class="font-bold text-gray-700 text-2xl">碗</span>
+              </div>
+              <!-- 湯匙 -->
+              <div onclick="toggleItem(this, '湯匙')" class="item-btn cursor-pointer bg-white border-2 border-gray-200 rounded-2xl p-2 flex flex-col items-center justify-center transition-all h-48 hover:bg-gray-50 hover:shadow-md">
+                <i class="fa-solid fa-spoon text-7xl text-teal-500 mb-3"></i>
+                <span class="font-bold text-gray-700 text-2xl">湯匙</span>
+              </div>
+              <!-- 筷子 -->
+              <div onclick="toggleItem(this, '筷子')" class="item-btn cursor-pointer bg-white border-2 border-gray-200 rounded-2xl p-2 flex flex-col items-center justify-center transition-all h-48 hover:bg-gray-50 hover:shadow-md">
+                <!-- SVG 筷子圖示 (加大) -->
+                <svg class="w-20 h-20 mb-3 text-red-500" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M21.92,2.38a1,1,0,0,0-1.41,0L2.38,20.51a1,1,0,1,0,1.41,1.41L21.92,3.8A1,1,0,0,0,21.92,2.38Z"/>
+                  <path d="M17.92,2.38a1,1,0,0,0-1.41,0L2.38,16.51a1,1,0,0,0,1.41,1.41L17.92,3.8A1,1,0,0,0,17.92,2.38Z"/>
+                </svg>
+                <span class="font-bold text-gray-700 text-2xl">筷子</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. 送出按鈕 -->
+          <button onclick="submitBorrow()" id="submitBtn" disabled class="w-full bg-gray-400 text-white font-bold py-5 rounded-2xl text-2xl shadow-lg transition-all transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
+            請先選擇班級座號
+          </button>
+        </div>
+
+        <!-- 4. 歸還區 -->
+        <div id="returnSection" class="hidden pt-6 border-t-4 border-dashed border-gray-300">
+          <h2 class="text-xl font-bold text-gray-700 mb-4 border-l-8 border-green-500 pl-3 flex items-center">
+            未歸還項目
+            <span class="text-sm font-normal text-gray-500 ml-auto bg-gray-100 px-2 py-1 rounded">點選歸還以取消</span>
+          </h2>
+          <div id="recordsList" class="space-y-4">
+            <!-- 借用列表動態插入 -->
+          </div>
+        </div>
+
+      </div>
+      
+      <!-- 頁尾 -->
+      <div class="bg-gray-100 p-4 text-center text-sm text-gray-500">
+        記得要愛惜公物喔！
+      </div>
+
+    </div>
+
+    <script>
+      // ==========================================
+      // 模擬 Google Apps Script 環境 (預覽模式用)
+      // ==========================================
+      if (typeof google === 'undefined') {
+        console.warn('正在預覽模式運行，使用模擬資料。');
+        var mockRunner = {
+          withSuccessHandler: function(func) { this.successHandler = func; return this; },
+          withFailureHandler: function(func) { this.errorHandler = func; return this; },
+          getInitData: function() {
+             setTimeout(() => {
+               this.successHandler({
+                  studentMap: { 
+                    '101': { '1': '王小明 (模擬)', '2': '李小華 (模擬)', '3': '陳大文 (模擬)' }, 
+                    '102': { '1': '張三 (模擬)' } 
+                  },
+                  teacherMap: { '101': '陳老師', '102': '林老師' }
+               });
+             }, 800);
+          },
+          handleBorrow: function(data) {
+             setTimeout(() => this.successHandler({success:true}), 600);
+          },
+          getStudentActiveRecords: function(c, s) {
+             // 模擬一些未歸還的資料
+             setTimeout(() => {
+               const mockRecords = (s == '1') ? [
+                 {id:'mock-1', time:'12/01 12:00', classId:c, seatNo:s, studentName:'王小明 (模擬)', teacherName:'陳老師', items:'碗, 筷子'}
+               ] : [];
+               this.successHandler(mockRecords);
+             }, 600);
+          },
+          handleReturn: function(id) {
+             setTimeout(() => this.successHandler({success:true}), 600);
+          }
+        };
+        window.google = { script: { run: mockRunner } };
+      }
+      // ==========================================
+
+      let globalData = {};
+      let selectedItems = new Set();
+      let currentStudent = { classId: '', seatNo: '', name: '', teacher: '' };
+
+      window.onload = function() {
+        // 呼叫後端 (或模擬後端)
+        google.script.run
+          .withSuccessHandler(initForm)
+          .withFailureHandler(showError)
+          .getInitData();
+      };
+
+      function initForm(data) {
+        globalData = data;
+        const classSelect = document.getElementById('classSelect');
+        const classes = Object.keys(data.studentMap).sort();
+        classes.forEach(cls => {
+          let option = document.createElement('option');
+          option.value = cls;
+          option.text = cls + ' 班';
+          classSelect.appendChild(option);
+        });
+        document.getElementById('loading').classList.add('hidden');
+        document.getElementById('mainForm').classList.remove('hidden');
+      }
+
+      function updateStudentList() {
+        const classId = document.getElementById('classSelect').value;
+        const seatSelect = document.getElementById('seatSelect');
+        seatSelect.innerHTML = '<option value="">請選擇</option>';
+        resetForm();
+
+        if (classId && globalData.studentMap[classId]) {
+          seatSelect.disabled = false;
+          // 自然排序座號
+          const seats = Object.keys(globalData.studentMap[classId]).sort((a,b) => parseInt(a) - parseInt(b));
+          seats.forEach(seat => {
+            let option = document.createElement('option');
+            option.value = seat;
+            option.text = seat + ' 號';
+            seatSelect.appendChild(option);
+          });
+        } else {
+          seatSelect.disabled = true;
+        }
+      }
+
+      function identifyStudent() {
+        const classId = document.getElementById('classSelect').value;
+        const seatNo = document.getElementById('seatSelect').value;
+
+        if (classId && seatNo) {
+          const studentName = globalData.studentMap[classId][seatNo];
+          const teacherName = globalData.teacherMap[classId] || '未設定';
+
+          currentStudent = { classId, seatNo, name: studentName, teacher: teacherName };
+
+          document.getElementById('displayStudentName').innerText = studentName;
+          document.getElementById('displayTeacherName').innerText = teacherName;
+          document.getElementById('infoArea').classList.remove('hidden');
+          
+          checkButtonState();
+          fetchStudentRecords();
+        } else {
+          document.getElementById('infoArea').classList.add('hidden');
+          currentStudent = { classId: '', seatNo: '', name: '', teacher: '' };
+        }
+      }
+
+      function toggleItem(element, item) {
+        if (selectedItems.has(item)) {
+          selectedItems.delete(item);
+          element.classList.remove('selected');
+        } else {
+          selectedItems.add(item);
+          element.classList.add('selected');
+        }
+        checkButtonState();
+      }
+
+      function checkButtonState() {
+        const btn = document.getElementById('submitBtn');
+        const hasStudent = currentStudent.name !== '';
+        const hasItems = selectedItems.size > 0;
+
+        if (hasStudent) {
+          if (hasItems) {
+            btn.disabled = false;
+            btn.classList.remove('bg-gray-400');
+            btn.classList.add('bg-blue-600', 'hover:bg-blue-700', 'hover:shadow-xl');
+            btn.innerText = '確認借用';
+          } else {
+            btn.disabled = true;
+            btn.classList.add('bg-gray-400');
+            btn.classList.remove('bg-blue-600', 'hover:bg-blue-700', 'hover:shadow-xl');
+            btn.innerText = '請選擇餐具';
+          }
+        } else {
+          btn.disabled = true;
+          btn.innerText = '請先選擇班級座號';
+        }
+      }
+
+      function resetForm() {
+        selectedItems.clear();
+        document.querySelectorAll('.item-btn').forEach(el => el.classList.remove('selected'));
+        document.getElementById('infoArea').classList.add('hidden');
+        document.getElementById('returnSection').classList.add('hidden');
+        currentStudent = { classId: '', seatNo: '', name: '', teacher: '' };
+        checkButtonState();
+      }
+
+      function submitBorrow() {
+        if (selectedItems.size === 0) return;
+        const btn = document.getElementById('submitBtn');
+        const originalText = btn.innerText;
+        btn.disabled = true;
+        btn.innerText = '處理中...';
+
+        const formData = {
+          classId: currentStudent.classId,
+          seatNo: currentStudent.seatNo,
+          studentName: currentStudent.name,
+          teacherName: currentStudent.teacher,
+          items: Array.from(selectedItems)
+        };
+
+        google.script.run
+          .withSuccessHandler(function(response) {
+            Swal.fire({
+              icon: 'success',
+              title: '借用成功',
+              text: '記得要還喔！',
+              timer: 2000,
+              showConfirmButton: false
+            });
+            selectedItems.clear();
+            document.querySelectorAll('.item-btn').forEach(el => el.classList.remove('selected'));
+            checkButtonState();
+            fetchStudentRecords();
+          })
+          .withFailureHandler(function(err) {
+            showError(err);
+            btn.disabled = false;
+            btn.innerText = originalText;
+          })
+          .handleBorrow(formData);
+      }
+
+      function fetchStudentRecords() {
+        if (!currentStudent.classId) return;
+        google.script.run
+          .withSuccessHandler(renderRecords)
+          .getStudentActiveRecords(currentStudent.classId, currentStudent.seatNo);
+      }
+
+      function renderRecords(records) {
+        const list = document.getElementById('recordsList');
+        const section = document.getElementById('returnSection');
+        list.innerHTML = '';
+
+        if (records.length > 0) {
+          section.classList.remove('hidden');
+          records.forEach(rec => {
+            const div = document.createElement('div');
+            div.className = 'flex justify-between items-center bg-white p-4 rounded-xl border-l-4 border-l-orange-500 border-gray-200 shadow-sm';
+            
+            div.innerHTML = `
+              <div class="flex-1">
+                <div class="text-sm text-gray-500 mb-2 flex flex-wrap gap-2 items-center">
+                   <span class="bg-gray-100 px-3 py-1 rounded-full text-gray-600"><i class="far fa-clock mr-1"></i>${rec.time}</span>
+                   <span class="bg-blue-100 text-blue-800 px-3 py-1 rounded-full font-bold">${rec.classId}班 ${rec.seatNo}號</span>
+                </div>
+                <div class="text-base mb-1">
+                    <span class="font-bold text-gray-800 text-xl mr-2">${rec.studentName}</span>
+                    <span class="text-gray-500">(${rec.teacherName}老師)</span>
+                </div>
+                <div class="font-bold text-orange-600 text-lg flex items-center mt-2">
+                   <i class="fa-solid fa-basket-shopping mr-2"></i>${rec.items}
+                </div>
+              </div>
+              <button onclick="returnItem('${rec.id}', this)" class="ml-4 bg-green-500 text-white px-6 py-4 rounded-xl text-lg font-bold hover:bg-green-600 transition-colors shadow-md whitespace-nowrap active:scale-95 transform">
+                歸還
+              </button>
+            `;
+            list.appendChild(div);
+          });
+        } else {
+          section.classList.add('hidden');
+        }
+      }
+
+      function returnItem(recordId, btnElement) {
+        btnElement.innerText = '...';
+        btnElement.disabled = true;
+        google.script.run
+          .withSuccessHandler(function() {
+             Swal.fire({
+              icon: 'success',
+              title: '歸還完成',
+              toast: true,
+              position: 'top-end',
+              showConfirmButton: false,
+              timer: 1500
+            });
+            fetchStudentRecords();
+          })
+          .withFailureHandler(showError)
+          .handleReturn(recordId);
+      }
+
+      function showError(err) {
+        console.error(err);
+        Swal.fire({
+          icon: 'error',
+          title: '發生錯誤',
+          text: err.message || '系統發生未知錯誤'
+        });
+      }
+    </script>
+  </body>
+</html>

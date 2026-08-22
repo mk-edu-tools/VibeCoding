@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>鷺江國小週六才藝班 - 請假系統</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap');
+      
+      body { font-family: 'Noto Sans TC', sans-serif; overflow-x: hidden; }
+      
+      .bg-animate {
+        background: linear-gradient(-45deg, #ee7752, #e73c7e, #23a6d5, #23d5ab);
+        background-size: 400% 400%;
+        animation: gradient 15s ease infinite;
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -1;
+      }
+      @keyframes gradient { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+      
+      .circle { position: absolute; border-radius: 50%; background: rgba(255, 255, 255, 0.2); animation: float 20s infinite linear; z-index: -1; }
+      @keyframes float { 0% { transform: translateY(0) rotate(0deg); opacity: 0.8; } 100% { transform: translateY(-100vh) rotate(360deg); opacity: 0; } }
+      
+      .glass-card { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.3); box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37); }
+      
+      .custom-input { transition: all 0.3s ease; }
+      .custom-input:focus { transform: scale(1.01); box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.5); }
+      .input-error { border-color: #ef4444 !important; box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2) !important; }
+
+      .loader { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; }
+      @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+      .skeleton { background: linear-gradient(90deg, #e0e0e0 25%, #f0f0f0 50%, #e0e0e0 75%); background-size: 200% 100%; animation: skeleton-loading 1.5s infinite; border-radius: 0.5rem; }
+      @keyframes skeleton-loading { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+    </style>
+  </head>
+  <body>
+    <div class="bg-animate"></div>
+    <div id="circles-container"></div>
+    <div id="root" class="min-h-screen flex items-center justify-center p-4"></div>
+
+    <script type="text/babel">
+      const { useState, useEffect } = React;
+
+      const createCircles = () => {
+        const container = document.getElementById('circles-container');
+        if (!container) return;
+        container.innerHTML = '';
+        for (let i = 0; i < 10; i++) {
+          const circle = document.createElement('div');
+          circle.classList.add('circle');
+          const size = Math.random() * 80 + 20;
+          circle.style.width = `${size}px`; circle.style.height = `${size}px`;
+          circle.style.left = `${Math.random() * 100}%`; circle.style.top = `${Math.random() * 100 + 100}%`;
+          circle.style.animationDuration = `${Math.random() * 10 + 10}s`;
+          container.appendChild(circle);
+        }
+      };
+
+      const SkeletonLoader = () => (
+        <div className="w-full max-w-lg glass-card rounded-3xl overflow-hidden shadow-2xl p-8 space-y-6">
+           <div className="skeleton h-10 w-3/4 mx-auto mb-8"></div>
+           <div className="space-y-4">
+             <div className="skeleton h-12 w-full"></div>
+             <div className="skeleton h-12 w-full"></div>
+             <div className="skeleton h-12 w-full"></div>
+             <div className="skeleton h-12 w-full"></div>
+             <div className="skeleton h-24 w-full"></div>
+           </div>
+        </div>
+      );
+
+      const App = () => {
+        const [courses, setCourses] = useState([]);
+        const [dates, setDates] = useState([]);
+        const [loadingConfig, setLoadingConfig] = useState(true);
+        const [submitting, setSubmitting] = useState(false);
+        const [submitted, setSubmitted] = useState(false);
+        const [error, setError] = useState('');
+        
+        const [reasonType, setReasonType] = useState('');
+        const [reasonDetail, setReasonDetail] = useState('');
+
+        const [formData, setFormData] = useState({
+          schoolType: '本校生',
+          classSeatNo: '',
+          fillerName: '',
+          phone: '',
+          leaveDate: '',
+          course: '',
+          teacher: '',
+          location: '',
+          reason: ''
+        });
+
+        useEffect(() => {
+          createCircles();
+          const savedFiller = localStorage.getItem('lujiang_fillerName');
+          const savedPhone = localStorage.getItem('lujiang_phone');
+          if (savedFiller || savedPhone) {
+            setFormData(prev => ({
+              ...prev,
+              fillerName: savedFiller || '',
+              phone: savedPhone || ''
+            }));
+          }
+
+          // 1. 先檢查 SessionStorage (前端快取)，如果有資料就秒開
+          const cachedConfig = sessionStorage.getItem('lujiang_config_v2');
+          if (cachedConfig) {
+            try {
+              const parsed = JSON.parse(cachedConfig);
+              setCourses(parsed.courses || []);
+              setDates(parsed.dates || []);
+              setLoadingConfig(false); // 立即解除 Loading
+            } catch (e) { console.log('Cache parse error'); }
+          }
+
+          // 2. 還是要呼叫後端 (更新快取或初次讀取)
+          if (typeof google !== 'undefined' && google.script) {
+            google.script.run
+              .withSuccessHandler((data) => {
+                setCourses(data.courses || []);
+                setDates(data.dates || []);
+                setLoadingConfig(false);
+                // 更新前端快取
+                sessionStorage.setItem('lujiang_config_v2', JSON.stringify(data));
+              })
+              .withFailureHandler(() => {
+                // 如果後端失敗，但前端有快取，就不報錯，讓使用者繼續用舊的
+                if (!sessionStorage.getItem('lujiang_config_v2')) {
+                   setError('無法讀取設定資料，請確認後台設定。');
+                   setLoadingConfig(false);
+                }
+              })
+              .getCourseConfig();
+          } else {
+            // 本地測試
+            setTimeout(() => {
+              const mockData = {
+                courses: [
+                  { courseName: '創意繪畫 A 班', teacher: '王小美', location: '美勞教室 1' },
+                  { courseName: '街舞入門', teacher: '張動感', location: '韻律教室' }
+                ],
+                dates: ['2024/12/02', '2024/12/09', '2025/01/06']
+              };
+              setCourses(mockData.courses);
+              setDates(mockData.dates);
+              setLoadingConfig(false);
+            }, 1500); 
+          }
+        }, []);
+
+        useEffect(() => {
+          if (reasonType === '其他') {
+            const finalReason = reasonDetail.trim() ? `其他：${reasonDetail}` : '其他';
+            setFormData(prev => ({ ...prev, reason: finalReason }));
+          } else {
+            setFormData(prev => ({ ...prev, reason: reasonType }));
+          }
+        }, [reasonType, reasonDetail]);
+
+        const handleInputChange = (e) => {
+          const { name, value } = e.target;
+          setFormData(prev => ({ ...prev, [name]: value }));
+
+          if (name === 'course') {
+            const selectedCourse = courses.find(c => c.courseName === value);
+            setFormData(prev => ({
+              ...prev,
+              course: value,
+              teacher: selectedCourse ? selectedCourse.teacher : '',
+              location: selectedCourse ? selectedCourse.location : ''
+            }));
+          }
+        };
+
+        const validatePhone = (phone) => /^09\d{8}$/.test(phone);
+
+        const handleSubmit = (e) => {
+          e.preventDefault();
+          setError('');
+
+          if (!validatePhone(formData.phone)) {
+            setError('手機號碼格式錯誤，請輸入 09 開頭的 10 碼數字');
+            return;
+          }
+
+          if (!formData.reason) {
+            setError('請點選請假事由 (病假、事假或其他)');
+            return;
+          }
+
+          setSubmitting(true);
+          localStorage.setItem('lujiang_fillerName', formData.fillerName);
+          localStorage.setItem('lujiang_phone', formData.phone);
+
+          if (typeof google !== 'undefined' && google.script) {
+            google.script.run
+              .withSuccessHandler((response) => {
+                setSubmitting(false);
+                if (response.success) setSubmitted(true);
+                else setError(response.message);
+              })
+              .withFailureHandler(() => {
+                setSubmitting(false);
+                setError('提交失敗，請檢查網路連線。');
+              })
+              .submitLeaveRequest(formData);
+          } else {
+             setTimeout(() => { setSubmitting(false); setSubmitted(true); }, 1500);
+          }
+        };
+
+        const resetForm = () => {
+          setSubmitted(false);
+          setReasonType('');
+          setReasonDetail('');
+          setFormData(prev => ({
+            ...prev,
+            classSeatNo: '',
+            leaveDate: '',
+            course: '',
+            teacher: '',
+            location: '',
+            reason: ''
+          }));
+        };
+        
+        const closeWindow = () => {
+            try { window.close(); } catch (e) {}
+        };
+
+        if (loadingConfig) return <SkeletonLoader />;
+
+        if (submitted) {
+          return (
+            <div className="glass-card w-full max-w-md p-8 rounded-2xl text-center shadow-2xl animate-fade-in">
+              <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                <i data-lucide="check" className="w-10 h-10 text-green-600"></i>
+              </div>
+              <h2 className="text-2xl font-bold text-gray-800 mb-2">請假成功！</h2>
+              <p className="text-gray-600 mb-8">
+                已收到申請。<br/>
+                班級座號姓名：{formData.classSeatNo}<br/>
+                填寫人：{formData.fillerName}
+              </p>
+              
+              <div className="space-y-4">
+                  <button 
+                    onClick={resetForm}
+                    className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-xl transition duration-300 transform hover:scale-[1.02] shadow-lg flex items-center justify-center gap-2"
+                  >
+                    <i data-lucide="plus-circle" className="w-5 h-5"></i>
+                    繼續為其他學生請假
+                  </button>
+
+                  <div className="pt-6 border-t border-gray-100">
+                    <p className="text-gray-500 text-sm mb-1">如無其他請假需求</p>
+                    <p className="text-gray-700 font-bold text-lg flex items-center justify-center gap-2">
+                      <i data-lucide="log-out" className="w-5 h-5"></i>
+                      請直接關閉視窗離開
+                    </p>
+                  </div>
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div className="w-full max-w-lg glass-card rounded-3xl overflow-hidden shadow-2xl flex flex-col relative z-10">
+            <div className="bg-gradient-to-r from-blue-500 to-teal-400 p-6 text-white text-center relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-full h-full opacity-20 bg-[url('https://www.transparenttextures.com/patterns/school.png')]"></div>
+              <h1 className="text-2xl font-bold relative z-10">鷺江國小週六才藝班</h1>
+              <p className="text-blue-100 text-sm mt-1 relative z-10">線上請假系統</p>
+            </div>
+
+            <div className="p-8">
+              {error && (
+                <div className="mb-6 p-4 bg-red-100 border-l-4 border-red-500 text-red-700 rounded text-sm flex items-start gap-2 animate-pulse">
+                  <i data-lucide="alert-circle" className="w-5 h-5 mt-0.5"></i>
+                  <span>{error}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleSubmit} className="space-y-6">
+                
+                {/* 學生校別 */}
+                <div>
+                  <label className="block text-gray-700 text-sm font-bold mb-2 flex items-center gap-2">
+                    <i data-lucide="school" className="w-4 h-4 text-blue-500"></i>
+                    請假學生校別
+                  </label>
+                  <div className="flex gap-4">
+                    <label className="flex items-center space-x-2 cursor-pointer bg-white/60 px-4 py-2 rounded-lg border border-gray-200 hover:border-blue-400 transition">
+                      <input type="radio" name="schoolType" value="本校生" checked={formData.schoolType === '本校生'} onChange={handleInputChange} className="text-blue-500 focus:ring-blue-500"/>
+                      <span className="text-gray-700">本校生</span>
+                    </label>
+                    <label className="flex items-center space-x-2 cursor-pointer bg-white/60 px-4 py-2 rounded-lg border border-gray-200 hover:border-blue-400 transition">
+                      <input type="radio" name="schoolType" value="他校生" checked={formData.schoolType === '他校生'} onChange={handleInputChange} className="text-blue-500 focus:ring-blue-500"/>
+                      <span className="text-gray-700">他校生</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* 班級座號姓名 */}
+                <div>
+                  <label className="block text-gray-700 text-sm font-bold mb-2 flex items-center gap-2">
+                    <i data-lucide="hash" className="w-4 h-4 text-blue-500"></i>
+                    請假學生班級座號姓名
+                  </label>
+                  <input required type="text" name="classSeatNo" value={formData.classSeatNo} onChange={handleInputChange} placeholder="例：10101王小明" className="custom-input w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:border-blue-500 bg-white/50 backdrop-blur-sm"/>
+                </div>
+
+                {/* 填寫人與電話 */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-gray-700 text-sm font-bold mb-2 flex items-center gap-2">
+                      <i data-lucide="user-pen" className="w-4 h-4 text-blue-500"></i>
+                      填寫表單人姓名
+                    </label>
+                    <input required type="text" name="fillerName" value={formData.fillerName} onChange={handleInputChange} placeholder="請輸入姓名" className="custom-input w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:border-blue-500 bg-white/50 backdrop-blur-sm"/>
+                  </div>
+                  <div>
+                    <label className="block text-gray-700 text-sm font-bold mb-2 flex items-center gap-2">
+                      <i data-lucide="phone" className="w-4 h-4 text-blue-500"></i>
+                      聯絡電話
+                    </label>
+                    <input required type="tel" name="phone" value={formData.phone} onChange={handleInputChange} placeholder="09xxxxxxxx" inputMode="numeric" className={`custom-input w-full px-4 py-3 rounded-lg border focus:outline-none bg-white/50 backdrop-blur-sm ${formData.phone && !validatePhone(formData.phone) ? 'input-error' : 'border-gray-300 focus:border-blue-500'}`}/>
+                  </div>
+                </div>
+
+                {/* 日期與課程 */}
+                <div>
+                  <label className="block text-gray-700 text-sm font-bold mb-2 flex items-center gap-2">
+                    <i data-lucide="calendar" className="w-4 h-4 text-blue-500"></i>
+                    請假日期
+                  </label>
+                  <div className="relative">
+                    <select required name="leaveDate" value={formData.leaveDate} onChange={handleInputChange} className="custom-input w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:border-blue-500 bg-white/50 backdrop-blur-sm appearance-none cursor-pointer">
+                      <option value="" disabled>請選擇日期</option>
+                      {dates.length > 0 ? dates.map((d, idx) => <option key={idx} value={d}>{d}</option>) : <option disabled>無可用日期</option>}
+                    </select>
+                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700"><i data-lucide="chevron-down" className="w-4 h-4"></i></div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-gray-700 text-sm font-bold mb-2 flex items-center gap-2">
+                    <i data-lucide="book-open" className="w-4 h-4 text-blue-500"></i>
+                    請假課程
+                  </label>
+                  <div className="relative">
+                    <select required name="course" value={formData.course} onChange={handleInputChange} className="custom-input w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:border-blue-500 bg-white/50 backdrop-blur-sm appearance-none cursor-pointer">
+                      <option value="" disabled>請選擇課程</option>
+                      {courses.map((item, idx) => <option key={idx} value={item.courseName}>{item.courseName}</option>)}
+                    </select>
+                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700"><i data-lucide="chevron-down" className="w-4 h-4"></i></div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-gray-700 text-sm font-bold mb-2 flex items-center gap-2"><i data-lucide="graduation-cap" className="w-4 h-4 text-gray-400"></i> 指導老師</label>
+                    <input readOnly type="text" value={formData.teacher} placeholder="自動帶入" className="w-full px-4 py-3 rounded-lg border border-gray-200 bg-gray-100/80 text-gray-500 cursor-not-allowed" />
+                  </div>
+                  <div>
+                    <label className="block text-gray-700 text-sm font-bold mb-2 flex items-center gap-2"><i data-lucide="map-pin" className="w-4 h-4 text-gray-400"></i> 上課地點</label>
+                    <input readOnly type="text" value={formData.location} placeholder="自動帶入" className="w-full px-4 py-3 rounded-lg border border-gray-200 bg-gray-100/80 text-gray-500 cursor-not-allowed" />
+                  </div>
+                </div>
+
+                {/* 請假事由 (動態按鈕版) */}
+                <div>
+                  <label className="block text-gray-700 text-sm font-bold mb-2 flex items-center gap-2">
+                    <i data-lucide="clipboard-list" className="w-4 h-4 text-blue-500"></i>
+                    請假事由
+                  </label>
+                  
+                  <div className="grid grid-cols-3 gap-3 mb-3">
+                    {['病假', '事假', '其他'].map((type) => (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => setReasonType(type)}
+                        className={`py-3 px-2 rounded-xl border transition-all duration-200 font-medium text-sm flex items-center justify-center gap-1 ${
+                          reasonType === type
+                            ? 'bg-blue-500 text-white border-blue-500 shadow-md transform scale-105'
+                            : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300 hover:bg-blue-50'
+                        }`}
+                      >
+                        {type === '病假' && <i data-lucide="thermometer" className="w-4 h-4"></i>}
+                        {type === '事假' && <i data-lucide="briefcase" className="w-4 h-4"></i>}
+                        {type === '其他' && <i data-lucide="more-horizontal" className="w-4 h-4"></i>}
+                        {type}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* 其他事由輸入框 (Conditional) */}
+                  <div className={`overflow-hidden transition-all duration-300 ease-in-out ${reasonType === '其他' ? 'max-h-24 opacity-100' : 'max-h-0 opacity-0'}`}>
+                    <input
+                      type="text"
+                      value={reasonDetail}
+                      onChange={(e) => setReasonDetail(e.target.value)}
+                      placeholder="請填寫具體原因 (選填，可不填寫)"
+                      className="custom-input w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:border-blue-500 bg-white/50 backdrop-blur-sm text-sm"
+                    />
+                    <p className="text-xs text-gray-500 mt-1 text-right">* 其他原因可選擇性填寫補充</p>
+                  </div>
+                </div>
+
+                <button type="submit" disabled={submitting} className={`w-full font-bold py-4 px-6 rounded-xl text-white shadow-lg transform transition duration-200 ${submitting ? 'bg-gray-400 cursor-not-allowed' : 'bg-gradient-to-r from-orange-400 to-pink-500 hover:from-orange-500 hover:to-pink-600 hover:scale-[1.02] hover:shadow-xl'}`}>
+                  {submitting ? <span className="flex items-center justify-center gap-2"><span className="loader w-5 h-5 border-2 border-white/30 border-t-white"></span>傳送中...</span> : '送出請假申請'}
+                </button>
+              </form>
+            </div>
+            <div className="bg-gray-50/50 p-4 text-center"><p className="text-xs text-gray-500">© 鷺江國小教務處 | 系統自動維護中</p></div>
+          </div>
+        );
+      };
+
+      const root = ReactDOM.createRoot(document.getElementById('root'));
+      root.render(<App />);
+      setTimeout(() => { if (window.lucide) window.lucide.createIcons(); }, 500);
+    </script>
+  </body>
+</html>

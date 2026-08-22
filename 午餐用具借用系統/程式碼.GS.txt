@@ -1,0 +1,195 @@
+/**
+ * 系統初始化
+ */
+function doGet() {
+  return HtmlService.createHtmlOutputFromFile('index')
+      .setTitle('學務處餐具借用系統')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
+/**
+ * [優化] 取得初始化資料：優先讀取快取
+ */
+function getInitData() {
+  const cache = CacheService.getScriptCache();
+  const cachedData = cache.get('CLASS_DATA');
+  
+  if (cachedData != null) {
+    return JSON.parse(cachedData);
+  }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const teacherSheet = ss.getSheetByName('教師設定');
+  const studentSheet = ss.getSheetByName('學生名單');
+
+  if (!teacherSheet || !studentSheet) {
+    throw new Error('找不到指定的工作表，請確認工作表名稱。');
+  }
+
+  // 取得老師資料
+  const teacherData = teacherSheet.getDataRange().getValues().slice(1);
+  const teacherMap = {};
+  teacherData.forEach(row => {
+    if(row[0]) teacherMap[row[0].toString()] = row[1];
+  });
+
+  // 取得學生資料
+  const studentData = studentSheet.getDataRange().getValues().slice(1);
+  const studentMap = {};
+  studentData.forEach(row => {
+    const classId = row[0].toString();
+    const seatNo = row[1].toString();
+    const name = row[2];
+    if (!studentMap[classId]) {
+      studentMap[classId] = {};
+    }
+    studentMap[classId][seatNo] = name;
+  });
+
+  const result = {
+    teacherMap: teacherMap,
+    studentMap: studentMap
+  };
+
+  cache.put('CLASS_DATA', JSON.stringify(result), 21600);
+  return result;
+}
+
+function refreshCache() {
+  CacheService.getScriptCache().remove('CLASS_DATA');
+  getInitData();
+}
+
+/**
+ * 處理借用請求
+ */
+function handleBorrow(formObject) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const recordSheet = ss.getSheetByName('借用紀錄');
+  
+  const timestamp = new Date();
+  const uuid = Utilities.getUuid();
+  const classId = formObject.classId ? formObject.classId.toString() : '';
+  const seatNo = formObject.seatNo ? formObject.seatNo.toString() : '';
+  const studentName = formObject.studentName;
+  const teacherName = formObject.teacherName;
+  const items = formObject.items;
+
+  if (!recordSheet) {
+    throw new Error('找不到「借用紀錄」工作表');
+  }
+
+  // --- [新增] 檢查是否重複借用 ---
+  const data = recordSheet.getDataRange().getValues();
+  // 從第2行開始遍歷 (index 1)
+  for (let i = 1; i < data.length; i++) {
+    // 檢查: 班級(col 2) + 座號(col 3) + 狀態(col 7)
+    // 使用寬鬆比較 (==) 以防數字/字串格式不同
+    if (data[i][2] == classId && 
+        data[i][3] == seatNo && 
+        data[i][7] == '借用中') {
+       throw new Error(`同學，你還有「${data[i][6]}」還沒歸還喔！請先歸還再借。`);
+    }
+  }
+  // ------------------------------
+  
+  const itemsString = items.join(', ');
+
+  recordSheet.appendRow([
+    uuid,
+    timestamp,
+    classId,
+    seatNo,
+    studentName,
+    teacherName,
+    itemsString,
+    '借用中',
+    '' 
+  ]);
+
+  return { success: true, message: '借用成功！' };
+}
+
+/**
+ * [新功能] 取得「所有」未歸還的紀錄 (顯示在首頁)
+ */
+function getAllActiveRecords() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const recordSheet = ss.getSheetByName('借用紀錄');
+  
+  if (!recordSheet) return [];
+
+  const data = recordSheet.getDataRange().getValues();
+  const activeRecords = [];
+
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    if (row[7] == '借用中') {
+      activeRecords.push({
+        id: row[0],
+        time: Utilities.formatDate(new Date(row[1]), Session.getScriptTimeZone(), 'MM/dd HH:mm'),
+        classId: row[2],
+        seatNo: row[3],
+        studentName: row[4],
+        teacherName: row[5],
+        items: row[6]
+      });
+    }
+  }
+  
+  return activeRecords.reverse();
+}
+
+/**
+ * 查詢該學生目前的借用紀錄
+ */
+function getStudentActiveRecords(classId, seatNo) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const recordSheet = ss.getSheetByName('借用紀錄');
+  const data = recordSheet.getDataRange().getValues();
+  
+  const activeRecords = [];
+
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    if (row[2] == classId && row[3] == seatNo && row[7] == '借用中') {
+      activeRecords.push({
+        id: row[0],
+        time: Utilities.formatDate(new Date(row[1]), Session.getScriptTimeZone(), 'MM/dd HH:mm'),
+        classId: row[2],
+        seatNo: row[3],
+        studentName: row[4],
+        teacherName: row[5],
+        items: row[6]
+      });
+    }
+  }
+  return activeRecords;
+}
+
+/**
+ * 處理歸還
+ */
+function handleReturn(recordId) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const recordSheet = ss.getSheetByName('借用紀錄');
+  const data = recordSheet.getDataRange().getValues();
+  
+  let found = false;
+  
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] == recordId) {
+      recordSheet.getRange(i + 1, 8).setValue('已歸還');
+      recordSheet.getRange(i + 1, 9).setValue(new Date());
+      found = true;
+      break;
+    }
+  }
+  
+  if (found) {
+    return { success: true };
+  } else {
+    throw new Error('找不到該筆借用紀錄');
+  }
+}
